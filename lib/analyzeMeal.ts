@@ -1,3 +1,5 @@
+import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system';
 import { Macros } from './types';
 
 export type MealAnalysis = {
@@ -7,44 +9,43 @@ export type MealAnalysis = {
 };
 
 /**
- * PLACEHOLDER analyzer.
- *
- * This returns believable-looking mock data so the app works end-to-end
- * without any API keys or backend. To make this real:
- *
- *   1. Stand up a small server (or a Vercel/Cloudflare function) that holds
- *      an AI vision API key (e.g. Anthropic's Claude API) - never put an
- *      API key inside the mobile app itself, it would be extractable by
- *      anyone who installs the app.
- *   2. Have that server accept a photo, call the vision model asking it to
- *      return JSON matching `MealAnalysis` (title, macros, recipe).
- *   3. Replace the body of this function with a `fetch()` call to your
- *      server, sending the photo and returning the parsed JSON.
- *
- * Everywhere else in the app (add-meal, result screens) only depends on
- * this function's signature, so swapping the implementation is the only
- * change needed to go from mock data to real AI analysis.
+ * The AI analysis itself runs in the separate backend/server.js process
+ * (so the API key never ships inside the app). This function's only job is
+ * to read the photo off disk and send it there. See the README's "AI photo
+ * analysis" section for how to start that server.
  */
-export async function analyzeMeal(photoUri: string): Promise<MealAnalysis> {
-  // Simulate network latency so the loading state is visible.
-  await new Promise((resolve) => setTimeout(resolve, 1500));
 
-  return {
-    title: 'Grilled Chicken & Veggie Bowl',
-    macros: {
-      calories: 520,
-      proteinGrams: 42,
-      carbsGrams: 45,
-      fatGrams: 18,
-    },
-    recipe: [
-      'Suggested recipe (edit anything below before saving):',
-      '',
-      '1. Season chicken breast with salt, pepper, and paprika; grill 6-7 minutes per side.',
-      '2. Roast mixed vegetables (broccoli, bell pepper, carrots) at 425°F for 15 minutes.',
-      '3. Cook 1/2 cup rice or quinoa according to package instructions.',
-      '4. Slice chicken and plate over the grain with roasted vegetables.',
-      '5. Drizzle with olive oil and a squeeze of lemon before serving.',
-    ].join('\n'),
-  };
+function getApiBaseUrl(): string {
+  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
+  // In Expo Go, the dev server's LAN address is exposed here - the backend
+  // runs on the same machine, on port 3001.
+  const hostUri = Constants.expoConfig?.hostUri;
+  const host = hostUri?.split(':')[0];
+  return `http://${host ?? 'localhost'}:3001`;
+}
+
+function mediaTypeFromUri(uri: string): 'image/jpeg' | 'image/png' | 'image/webp' {
+  const ext = uri.split('.').pop()?.toLowerCase();
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
+export async function analyzeMeal(photoUri: string): Promise<MealAnalysis> {
+  const imageBase64 = await FileSystem.readAsStringAsync(photoUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  const response = await fetch(`${getApiBaseUrl()}/analyze-meal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageBase64, mediaType: mediaTypeFromUri(photoUri) }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error ?? `Meal analysis failed (status ${response.status}).`);
+  }
+
+  return response.json();
 }

@@ -3,10 +3,12 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.21",
     "expo-camera": "^57.0.4",
     "expo-constants": "^57.0.17",
+    "expo-file-system": "~57.0.6",
     "expo-image-picker": "^57.0.16",
     "expo-linking": "^57.0.9",
     "expo-router": "^57.0.20",

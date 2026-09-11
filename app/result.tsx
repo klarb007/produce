@@ -40,13 +40,17 @@ export default function ResultScreen() {
         setRecipe(meal.recipe);
       });
     } else if (params.photoUri) {
-      // A brand-new photo: run it through the (mock) AI analyzer.
-      analyzeMeal(params.photoUri).then((analysis) => {
-        setTitle(analysis.title);
-        setMacros(analysis.macros);
-        setRecipe(analysis.recipe);
-        setLoading(false);
-      });
+      // A brand-new photo: run it through the AI analyzer.
+      analyzeMeal(params.photoUri)
+        .then((analysis) => {
+          setTitle(analysis.title);
+          setMacros(analysis.macros);
+          setRecipe(analysis.recipe);
+          setLoading(false);
+        })
+        .catch((error: Error) => {
+          Alert.alert('Analysis failed', error.message, [{ text: 'OK', onPress: () => router.back() }]);
+        });
     }
   }, [params.id, params.photoUri]);
 
