@@ -9,7 +9,8 @@ Built with [Expo](https://expo.dev) (React Native + TypeScript) and
 ## Running the app
 
 You don't need Xcode or Android Studio for this — everything runs through the
-free **Expo Go** app on your own phone.
+free **Expo Go** app on your own phone. You'll use **two terminal windows**:
+one for the app, one for the AI backend that analyzes your photos.
 
 1. Install dependencies (only needed once, or after pulling new changes):
 
@@ -17,16 +18,28 @@ free **Expo Go** app on your own phone.
    npm install
    ```
 
-2. Start the dev server:
+2. **One-time:** set up your AI key — see "AI photo analysis" below. You can
+   skip this and come back to it later; the app runs fine without it, photo
+   analysis just won't work until it's done.
+
+3. In your first terminal window, start the backend:
+
+   ```
+   node --env-file=.env backend/server.js
+   ```
+
+   Leave this running. It's what talks to the AI model.
+
+4. In a **second** terminal window (same project folder), start the app:
 
    ```
    npx expo start
    ```
 
-3. A QR code will appear in the terminal. Open the **Expo Go** app on your
-   phone and scan it (iOS: use the Camera app instead, then tap the banner
-   that appears). The app will load on your phone, and it will hot-reload
-   automatically whenever the code changes.
+5. A QR code will appear. Open the **Expo Go** app on your phone and scan it
+   (iOS: use the Camera app instead, then tap the banner that appears). The
+   app loads on your phone and hot-reloads automatically whenever the code
+   changes.
 
 To run it in a browser instead: `npx expo start --web`.
 
@@ -41,25 +54,57 @@ To run it in a browser instead: `npx expo start --web`.
 - `lib/` — app logic, no UI:
   - `types.ts` — the `Meal` and `Macros` data shapes
   - `mealsStore.ts` — saves/loads meals from on-device storage (AsyncStorage)
-  - `analyzeMeal.ts` — **currently a mock/placeholder** (see below)
+  - `analyzeMeal.ts` — reads a photo off the phone and sends it to the backend
+- `backend/server.js` — a small standalone server that holds the AI API key
+  and calls Claude's vision model. Runs separately from the Expo app (see
+  above) so the key never ships inside the app itself.
 
-## Connecting a real AI model (next step)
+## AI photo analysis (Claude)
 
-Right now `lib/analyzeMeal.ts` returns fake but realistic-looking data so the
-whole app works end-to-end without any setup. To make the analysis real:
+Meal photos are analyzed by Anthropic's Claude API (`claude-sonnet-5`, a
+vision-capable model), via `backend/server.js`. Keeping this in a separate
+server — rather than calling the AI directly from the phone app — matters:
+an API key baked into the app itself could be extracted by anyone who
+installs it and used to rack up charges on your account.
 
-1. **Do not** call an AI vision API (e.g. Anthropic's Claude API) directly
-   from the phone app with an API key baked in — anyone who installs the app
-   could extract that key and rack up charges on your account.
-2. Instead, stand up a small backend (a single serverless function is enough
-   — e.g. on Vercel, Cloudflare Workers, or a tiny Node server) that:
-   - accepts a photo upload from the app,
-   - sends it to a vision-capable AI model asking it to return the meal's
-     name, estimated macros, and a suggested recipe as structured JSON,
-   - returns that JSON to the app.
-3. Update `analyzeMeal()` in `lib/analyzeMeal.ts` to `fetch()` your backend
-   instead of returning mock data. No other file needs to change — every
-   screen already calls this one function and expects this shape back.
+### One-time setup
+
+1. Get an API key at [console.anthropic.com](https://console.anthropic.com)
+   (Settings → API Keys). This is a different account from your Expo
+   account — Anthropic bills separately, pay-as-you-go.
+2. In the project folder, copy the example env file:
+   ```
+   cp .env.example .env
+   ```
+3. Open `.env` and paste your key in place of `your-key-here`:
+   ```
+   ANTHROPIC_API_KEY=sk-ant-...
+   ```
+   `.env` is already git-ignored — it will never be committed or pushed.
+4. Start the backend as shown in "Running the app" above. If it printed
+   `WARNING: ANTHROPIC_API_KEY is not set`, the key wasn't picked up — double
+   check step 3, then stop (Ctrl+C) and start it again.
+
+That's it — take a photo in the app and it will now be genuinely analyzed.
+
+**Cost:** roughly $0.001–$0.003 per photo analyzed (a fraction of a cent),
+billed to your Anthropic account. There's no subscription — you only pay
+for photos you actually analyze.
+
+**If analysis fails** (e.g. the backend isn't running, or the key isn't set
+yet), the app shows an alert explaining why instead of hanging on the
+loading screen — check the message it gives you first, and check that
+`backend/server.js` is still running in its terminal window.
+
+### Deploying beyond your own computer
+
+Right now AI analysis only works while `backend/server.js` is running on
+your computer, on the same Wi-Fi network as your phone. To make it work for
+a build that isn't tethered to your laptop (TestFlight, Play Store, or
+friends testing over the internet), deploy `backend/server.js` to a small
+Node host (Render, Railway, Fly.io, etc.), set `ANTHROPIC_API_KEY` as a
+secret there rather than in a local `.env` file, and set
+`EXPO_PUBLIC_API_URL` in the app to that host's URL.
 
 ## Publishing an update / building a real app store build
 
