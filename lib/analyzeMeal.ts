@@ -1,5 +1,8 @@
 import Constants from 'expo-constants';
-import * as FileSystem from 'expo-file-system';
+// The main 'expo-file-system' export deprecated readAsStringAsync in favor
+// of a new File/Directory API; 'expo-file-system/legacy' keeps the old,
+// simpler read-to-base64 call working.
+import * as FileSystem from 'expo-file-system/legacy';
 import { Macros } from './types';
 
 export type MealAnalysis = {
