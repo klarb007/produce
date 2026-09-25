@@ -2,9 +2,14 @@
 // photos. Run it with: node --env-file=.env backend/server.js
 // (see the "AI photo analysis" section of the README for setup).
 const http = require('http');
-const Anthropic = require('@anthropic-ai/sdk');
+const Groq = require('groq-sdk');
 
 const PORT = process.env.PORT || 3001;
+
+// Vision-capable model on Groq. Groq's model lineup changes over time -
+// if this stops working, check https://console.groq.com/docs/models for a
+// current model marked "vision" and swap it in here.
+const MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 const ALLOWED_MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
@@ -58,47 +63,45 @@ async function handleAnalyzeMeal(request, response) {
   if (!ALLOWED_MEDIA_TYPES.includes(mediaType)) {
     return sendJson(response, 400, { error: `mediaType must be one of ${ALLOWED_MEDIA_TYPES.join(', ')}` });
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.GROQ_API_KEY) {
     return sendJson(response, 500, {
-      error: 'Server is missing ANTHROPIC_API_KEY. Add it to .env and restart with: node --env-file=.env backend/server.js',
+      error: 'Server is missing GROQ_API_KEY. Add it to .env and restart with: node --env-file=.env backend/server.js',
     });
   }
 
-  const client = new Anthropic();
+  const client = new Groq();
 
   let aiResponse;
   try {
-    aiResponse = await client.messages.create({
-      model: 'claude-sonnet-5',
-      max_tokens: 1024,
-      output_config: { effort: 'low' },
-      system: SYSTEM_PROMPT,
+    aiResponse = await client.chat.completions.create({
+      model: MODEL,
+      max_completion_tokens: 1024,
       messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
         {
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
+            { type: 'image_url', image_url: { url: `data:${mediaType};base64,${imageBase64}` } },
             { type: 'text', text: 'Analyze this meal.' },
           ],
         },
       ],
     });
   } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError) {
-      return sendJson(response, 500, { error: 'Invalid ANTHROPIC_API_KEY.' });
+    if (error instanceof Groq.AuthenticationError) {
+      return sendJson(response, 500, { error: 'Invalid GROQ_API_KEY.' });
     }
-    if (error instanceof Anthropic.RateLimitError) {
+    if (error instanceof Groq.RateLimitError) {
       return sendJson(response, 429, { error: 'Rate limited by the AI provider - try again shortly.' });
     }
-    if (error instanceof Anthropic.APIError) {
+    if (error instanceof Groq.APIError) {
       return sendJson(response, 502, { error: `AI provider error: ${error.message}` });
     }
     console.error(error);
     return sendJson(response, 500, { error: 'Unexpected server error.' });
   }
 
-  const textBlock = aiResponse.content.find((block) => block.type === 'text');
-  const raw = textBlock ? textBlock.text : '';
+  const raw = aiResponse.choices[0]?.message?.content ?? '';
   const jsonText = raw.trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
 
   try {
@@ -128,7 +131,7 @@ const server = http.createServer((request, response) => {
 
 server.listen(PORT, () => {
   console.log(`Produce backend listening on http://localhost:${PORT}`);
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn('WARNING: ANTHROPIC_API_KEY is not set - meal analysis will fail until it is.');
+  if (!process.env.GROQ_API_KEY) {
+    console.warn('WARNING: GROQ_API_KEY is not set - meal analysis will fail until it is.');
   }
 });
